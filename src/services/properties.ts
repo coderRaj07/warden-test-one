@@ -18,21 +18,23 @@ export function buildPropertyWhere(req: Request): Prisma.PropertyWhereInput | un
 
 // Apply weather filters
 export function filterPropertiesByWeather(
-  properties: (Property & { weather: { temperature: number | null; humidity: number | null; weatherCode: number | null } })[],
-  tempMin: number,
-  tempMax: number,
-  humidityMin: number,
-  humidityMax: number,
-  weatherCodes: number[]
-) {
-  return properties.filter((p) => {
-    const { temperature, humidity, weatherCode } = p.weather;
-    return (
-      (temperature ?? 999) >= tempMin &&
-      (temperature ?? -999) <= tempMax &&
-      (humidity ?? 999) >= humidityMin &&
-      (humidity ?? -999) <= humidityMax &&
-      (weatherCodes.length === 0 || (weatherCode !== null && weatherCodes.includes(weatherCode)))
-    );
-  });
-}
+    properties: (Property & { weather: { temperature: number | null; humidity: number | null; weatherCode: number | null } })[],
+    tempMin: number,
+    tempMax: number,
+    humidityMin: number,
+    humidityMax: number,
+    weatherCodes: number[]
+  ) {
+    const weatherSet = new Set(weatherCodes);
+  
+    return properties.filter(({ weather }) => {
+      const { temperature, humidity, weatherCode } = weather;
+  
+      if (temperature !== null && (temperature < tempMin || temperature > tempMax)) return false;
+      if (humidity !== null && (humidity < humidityMin || humidity > humidityMax)) return false;
+      if (weatherSet.size && (weatherCode === null || !weatherSet.has(weatherCode))) return false;
+  
+      return true;
+    });
+  }
+  
