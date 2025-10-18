@@ -1,95 +1,177 @@
-# 🏠 Weather to Stay or Not
+## 🏠 Property Weather Service
 
-Welcome! This is an evaluation project for Warden.
+This project provides a backend API to fetch properties along with live weather information. It uses **PostgreSQL** via Prisma, **Redis** for caching, and includes pagination, search, and weather filtering.
 
-You are provided with a slice of the Warden backend codebase. At present, it contains only one API endpoint, `/get-properties`, which returns the first 20 properties and supports basic text search.
+---
 
-In the file `.env.example` you are given readonly credentials of a live hosted database. This db is already populated with properties data on which this API operates.
+## Features
 
-## Objectives
+- Search properties by `name`, `city`, or `state`.
+- Filter properties by temperature, humidity, and weather codes.
+- Pagination support.
+- Live weather fetching with **Redis caching**.
+- Concurrency-limited requests for weather API.
 
-Your task is to build a single **search page in Next.js** that consumes this API to return accurate results and provides users with both search and filtering capabilities. **Specific Requirement is given below.**
+---
 
-The focus here is **functionality rather than design**. This means the main priority is on backend query optimization (efficiently handling multiple filters, scaling to larger datasets, and returning results quickly) and smooth frontend integration (accurate wiring between filters, search, and API responses). The UI itself can remain minimal: a simple search bar, intuitive filtering inputs, and property cards showing relevant information are more than enough.
+## Prerequisites
 
-## User Requirements
+- Node.js >= 18
+- npm or yarn
+- PostgreSQL
+- Redis
 
-![It sure is a hot one today](https://arden-public.s3.ap-south-1.amazonaws.com/hotone.jpg)
+---
 
-Our Product team has identified that weather is a critical factor when people choose properties to stay at. In fact, some residents might even reject a job offer if the local weather doesn’t suit them. To address this, we need to enhance the property search experience by adding **live weather-based filters**.
+## Setup Instructions
 
-The Marketing team is also planning to run a campaign that will bring a lot of traffic. So, along with Tech, all three teams meet to discuss what needs to be done.
+### 1. Clone the repository
 
-After a 9 hour meeting, following filters and constraints were finalized.
+```bash
+git clone https://github.com/coderRaj07/warden-test-one
+cd warden-test-one
+```
+### 2. Install dependencies
 
-| **Filter**             | **Input Type**          | **Allowed Range/Options**                                                                                                                                                                                                                     |
-| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Temperature Range (°C) | Numeric range (min/max) | -20°C to 50°C                                                                                                                                                                                                                                 |
-| Humidity Range (%)     | Numeric range (min/max) | 0% to 100%                                                                                                                                                                                                                                    |
-| Weather Condition      | Dropdown (grouped)      | - **Clear:** 0 (clear sky)<br>- **Cloudy:** 1–3 (partly cloudy to overcast)<br>- **Drizzle:** 51–57 (light to dense drizzle)<br>- **Rainy:** 61–67, 80–82 (rain showers, light to heavy)<br>- **Snow:** 71–77, 85–86 (snowfall, snow showers) |
+```bash
+npm install
+# or
+yarn install
+```
 
-> **Note:** The numbers listed under "Weather Condition" refer to weather codes as defined by [WMO](https://codes.wmo.int/common/weather-code) (World Meteorological Organization)
+### 3. Setup `.env` file
 
-## Approach
+Create a `.env` file based on `.env.example`:
 
-1. Use [Open-Meteo](https://open-meteo.com/) to fetch **live weather data** by passing `latitude` and `longitude` from each property. No API key is required.
+```bash
+cp .env.example .env
+```
 
-2. You only have **readonly access** to the provided database. If you wish to create migrations or modify the schema, please follow the [migration guide](docs/migrations.md).
 
-## Installation
 
-1. Clone this repository and move into the folder:
-   ```bash
-   git clone <repo-url>
-   cd warden-test-one
-   ```
-2. Install Dependencies
-   ```bash
-   npm i
-   npm run prisma:gen
-   ```
-3. Copy Environment File
-   ```bash
-   cp .env.example .env
-   ```
-4. Start the development server
-   ```bash
-   npm run dev
-   ```
-   open `http://localhost:5000` you should see "Warden Weather Test: OK"
+---
 
-## Technical Expectations
+### 4. Redis Installation
 
-1. Use strict types as much as possible.
+#### Linux (Ubuntu/Debian)
 
-2. Keep the code modular, resource efficient and fast!
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+redis-cli ping
+# Should return: PONG
+```
 
-3. Keep a good commit history, with small meaningful commits
+#### macOS (Homebrew)
 
-## Quality Expectations
+```bash
+brew install redis
+brew services start redis
+redis-cli ping
+# Should return: PONG
+```
 
-Assume that you are already working here, and you are given full responsibilty ownership of this endpoint. Treat this codebase as production!
+#### Windows
 
-If you feel that you can enhance this project with any additional filters, better UI elements, or something different altogether! Feel free to run wild.
+**Option 1: WSL (Ubuntu inside Windows)**
+Follow the **Linux instructions** inside WSL.
 
-## Deliverables
+**Option 2: Docker**
 
-1. A working app with the required changes as per the assignment.
+```bash
+docker pull redis
+docker run -p 6379:6379 --name redis-cache -d redis
+docker exec -it redis-cache redis-cli ping
+# Should return: PONG
+```
 
-2. README.md with setup/run instructions. Include .env.example and a seed step (if any) if you've changed db schema.
+---
 
-3. AI_USAGE.md that lists where you used AI/coding assistants, prompts you asked for substantive code, and how you verified/modified results. AI use is not discouraged, but we want to understand how you structure your prompts.
+### 5. Database Setup
 
-4. A 5-10 min video walkthrough via Loom showing the working feature and explaining your approach, a couple of decisions, and at least one scenario where you discovered some critical foresight and changed your approach.
+```bash
+# Generate Prisma client
+npx prisma generate
+```
 
-## Submission
+---
 
-- You have **48 hours** from the time you receive the assignment email to complete and submit your solution.
+### 6. Run the server
 
-- After making all required changes, **push your code to a public repository**.
+```bash
+npm run dev
+# or
+ts-node src/index.ts
+```
 
-- **Share the public repo link** and all deliverables by replying to the assignment email, and **CC hiring@wardenera.com**.
+Server will run at `http://localhost:5000` (or PORT from `.env`).
 
-- Use the subject line: `Weather to Stay or Not | Warden Assignment by {your_name}`.
+---
 
-Good luck, have fun.
+### 7. API Usage
+
+**Get Properties with optional filters:**
+
+```
+GET /get-properties?page=1&searchText=delhi&tempMin=20&tempMax=35&humidityMin=30&humidityMax=70&weatherCodes=0,1,2
+```
+
+Query Parameters:
+
+* `page` (number) – pagination
+* `searchText` (string) – search by name, city, or state
+* `tempMin` / `tempMax` (number) – temperature filter
+* `humidityMin` / `humidityMax` (number) – humidity filter
+* `weatherCodes` (comma-separated numbers) – weather code filter
+
+Response:
+
+```json
+{
+  "page": 1,
+  "count": 10,
+  "results": [
+    {
+            "id": 433,
+            "name": "Warden Hyderabad 183",
+            "city": "Hyderabad",
+            "state": "Telangana",
+            "country": "India",
+            "lat": 17.42453,
+            "lng": 78.41783,
+            "geohash5": "17.40,78.40",
+            "isActive": false,
+            "tags": [
+                "laundry",
+                "budget",
+                "female-only",
+                "near-metro",
+                "parking",
+                "cowork"
+            ],
+            "createdAt": "2025-10-08T03:18:03.669Z",
+            "updatedAt": "2025-10-08T03:18:03.669Z",
+            "weather": {
+                "temperature": 29.3,
+                "humidity": 55,
+                "weatherCode": 2
+            }
+    }
+  ]
+}
+```
+
+---
+
+### 8. Notes
+
+* **Caching**: Weather data is cached in Redis for `WEATHER_CACHE_TTL` seconds.
+* **Concurrency**: Weather API requests are limited by `WEATHER_CONCURRENCY`.
+* Ensure Redis is running before starting the server.
+* If you change Prisma schema, always run `npx prisma generate`.
+
+---
+
+
