@@ -6,12 +6,12 @@ export function buildPropertyWhere(req: Request): Prisma.PropertyWhereInput | un
   const { searchText } = req.query;
   if (typeof searchText !== "string" || !searchText.trim()) return undefined;
 
-  const query = searchText.trim();
+  const query = (searchText as string).trim().toLowerCase();
   return {
     OR: [
-      { name: { contains: query, mode: Prisma.QueryMode.insensitive } as Prisma.StringFilter<'Property'> },
-      { city: { contains: query, mode: Prisma.QueryMode.insensitive } as Prisma.StringNullableFilter<'Property'> },
-      { state: { contains: query, mode: Prisma.QueryMode.insensitive } as Prisma.StringNullableFilter<'Property'> },
+      { name: { contains: query} as Prisma.StringFilter<'Property'> },
+      { city: { contains: query } as Prisma.StringNullableFilter<'Property'> },
+      { state: { contains: query } as Prisma.StringNullableFilter<'Property'> },
     ],
   };
 }
