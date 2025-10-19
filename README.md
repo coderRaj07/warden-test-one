@@ -1,6 +1,6 @@
 ## 🏠 Property Weather Service
 
-This project provides a backend API to fetch properties along with live weather information. It uses **PostgreSQL** via Prisma, **Redis** for caching, and includes pagination, search, and weather filtering.
+This project provides a backend API to fetch properties along with live weather information. It uses **MySQL** via Prisma, **Redis** for caching, and includes pagination, search, and weather filtering.
 
 ---
 
