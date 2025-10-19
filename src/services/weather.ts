@@ -1,121 +1,55 @@
 import { Property } from "@prisma/client";
-import { redis, WEATHER_CACHE_TTL } from "../database/redis";
+import pLimit from "p-limit";
+import { redis, WEATHER_CACHE_TTL, CONCURRENCY_LIMIT } from "../database/redis";
 
-type Weather = {
+export type Weather = {
   temperature: number | null;
   humidity: number | null;
   weatherCode: number | null;
 };
 
-async function fetchSingleWeather(lat: number, lng: number): Promise<Weather> {
-  try {
-    const cacheKey = `weather:${lat}:${lng}`;
-    const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+export type EnrichedProperty = Property & { weather: Weather };
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code`;
+// Fetch weather for a single property with Redis caching
+export async function fetchWeatherWithCache(property: Property): Promise<Weather> {
+  const key = `property:weather:${property.id}`;
+  const cached = await redis.get(key);
+
+  if (cached) return JSON.parse(cached);
+
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${property.lat}&longitude=${property.lng}&current=temperature_2m,relative_humidity_2m,weather_code`;
     const res = await fetch(url);
     const data = await res.json();
 
-    const weather = {
-      temperature: data?.current?.temperature_2m ?? null,
-      humidity: data?.current?.relative_humidity_2m ?? null,
-      weatherCode: data?.current?.weather_code ?? null,
+    const weather: Weather = {
+      temperature: data.current?.temperature_2m ?? null,
+      humidity: data.current?.relative_humidity_2m ?? null,
+      weatherCode: data.current?.weather_code ?? null,
     };
 
-    await redis.set(cacheKey, JSON.stringify(weather), "EX", WEATHER_CACHE_TTL);
+    await redis.set(key, JSON.stringify(weather), "EX", WEATHER_CACHE_TTL);
     return weather;
-  } catch {
+  } catch (err) {
+    console.error(`[Weather] Fetch failed for property ${property.id}:`, err);
     return { temperature: null, humidity: null, weatherCode: null };
   }
 }
 
-export async function fetchBatchWeather(properties: Property[]) {
-  // Only include valid coordinates
-  const validProperties = properties.filter(
-    (p) => typeof p.lat === "number" && typeof p.lng === "number"
-  );
+// Fetch weather for multiple properties concurrently
+export async function fetchWeatherForProperties(properties: Property[]): Promise<EnrichedProperty[]> {
+  const limit = pLimit(CONCURRENCY_LIMIT);
 
-  const uniqueCoords = new Map<string, { lat: number; lng: number }>();
-
-  validProperties.forEach((p) => {
-    const key = `${p.lat}:${p.lng}`;
-    if (!uniqueCoords.has(key)) uniqueCoords.set(key, { lat: p.lat!, lng: p.lng! });
-  });
-
-  if (uniqueCoords.size === 0) {
-    return properties.map((p) => ({
-      ...p,
-      weather: { temperature: null, humidity: null, weatherCode: null },
-    }));
-  }
-
-  const latitudes = [...uniqueCoords.values()].map((v) => v.lat).join(",");
-  const longitudes = [...uniqueCoords.values()].map((v) => v.lng).join(",");
-
-  const cacheKey = `weather-batch:${latitudes}:${longitudes}`;
-  const cached = await redis.get(cacheKey);
-
-  if (cached) {
-    const data = JSON.parse(cached);
-    return properties.map((p) => ({
-      ...p,
-      weather: data[`${p.lat}:${p.lng}`] ?? { temperature: null, humidity: null, weatherCode: null },
-    }));
-  }
-
-  try {
-    // Batched request for all properties
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitudes}&longitude=${longitudes}&current=temperature_2m,relative_humidity_2m,weather_code`;
-    const res = await fetch(url);
-    const data = await res.json();
-
-    const mapped: Record<string, Weather> = {};
-
-    // Some versions of open-meteo batch response return `current` as array
-    if (Array.isArray(data.current)) {
-      data.current.forEach((w: any, idx: number) => {
-        const key = [...uniqueCoords.keys()][idx];
-        mapped[key] = {
-          temperature: w.temperature_2m ?? null,
-          humidity: w.relative_humidity_2m ?? null,
-          weatherCode: w.weather_code ?? null,
-        };
-      });
-    } else {
-      // fallback for single response
-      const onlyKey = [...uniqueCoords.keys()][0];
-      mapped[onlyKey] = {
-        temperature: data?.current?.temperature_2m ?? null,
-        humidity: data?.current?.relative_humidity_2m ?? null,
-        weatherCode: data?.current?.weather_code ?? null,
-      };
-    }
-
-    await redis.set(cacheKey, JSON.stringify(mapped), "EX", WEATHER_CACHE_TTL);
-
-    // Merge weather data into properties
-    return properties.map((p) => ({
-      ...p,
-      weather:
-        p.lat && p.lng
-          ? mapped[`${p.lat}:${p.lng}`] ?? { temperature: null, humidity: null, weatherCode: null }
-          : { temperature: null, humidity: null, weatherCode: null },
-    }));
-  } catch (err) {
-    console.warn("Batch weather fetch failed, falling back to per-property fetch...", err);
-
-    // Fallback gracefully
-    const weatherData = await Promise.all(
-      properties.map(async (p) => {
-        if (!p.lat || !p.lng) {
-          return { ...p, weather: { temperature: null, humidity: null, weatherCode: null } };
-        }
-        const weather = await fetchSingleWeather(p.lat, p.lng);
+  const results = await Promise.allSettled(
+    properties.map((p) =>
+      limit(async () => {
+        const weather = await fetchWeatherWithCache(p);
         return { ...p, weather };
       })
-    );
+    )
+  );
 
-    return weatherData;
-  }
+  return results
+    .filter((r): r is PromiseFulfilledResult<EnrichedProperty> => r.status === "fulfilled")
+    .map((r) => r.value);
 }
