@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../database/prisma";
 import { buildPropertyWhere, filterPropertiesByWeather } from "../services/properties";
-import { fetchWeatherForProperties } from "../services/weather";
+import { fetchBatchWeather } from "../services/weather";
 import { serializeResponse } from "../utils/serialize";
 
 // Main handler
@@ -21,30 +21,35 @@ export const getProperties = async (req: Request, res: Response) => {
       ? (req.query.weatherCodes as string).split(",").map(Number)
       : [];
 
-    // Fetch properties (extra for post-filtering)
-    const fetchCount = take * 3;
     const properties = await prisma.property.findMany({
       skip,
-      take: fetchCount,
+      take,
       where: buildPropertyWhere(req),
       orderBy: { createdAt: "desc" },
     });
 
-    // Fetch weather concurrently
-    const enrichedProperties = await fetchWeatherForProperties(properties);
+    if (!properties.length)
+      return res.json(serializeResponse({ page, count: 0, results: [] }));
 
-    // Apply weather filters
-    const filtered = filterPropertiesByWeather(enrichedProperties, tempMin, tempMax, humidityMin, humidityMax, weatherCodes);
+    // Batch fetch weather for all coordinates at once
+    const enriched = await fetchBatchWeather(properties);
 
-    // Final pagination
-    const paginated = filtered.slice(0, take);
+    // Apply filters
+    const filtered = filterPropertiesByWeather(
+      enriched,
+      tempMin,
+      tempMax,
+      humidityMin,
+      humidityMax,
+      weatherCodes
+    );
 
     return res.json(  
-      serializeResponse({
-      page,
-      count: paginated.length,
-      results: paginated,
-    }));
+      serializeResponse({ 
+        page, 
+        count: filtered.length, 
+        results: filtered 
+      }));
   } catch (err) {
     console.error("[Properties] Error fetching properties:", err);
     return res.status(500).json({ error: "Internal Server Error" });
